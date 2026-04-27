@@ -1,16 +1,17 @@
 """Mochi CLI — the main entry point.
 
-Workflow (matches the YouTube tutorial):
-1. Script: GPT-4o generates image prompts + video prompts with dialogue
+Workflow (matches the YouTube tutorial exactly):
+1. Script: Paste prompt into ChatGPT website → get JSON back
 2. Images: Paste prompts into Higgsfield → Nano Banana 2 (9:16, 2K)
 3. Clips:  Upload images to Higgsfield → Kling 3.0 (enhanced OFF, audio ON, 1080p)
 4. Stitch: ffmpeg concatenates clips (audio already embedded by Kling)
 5. Polish: Add top label overlay via ffmpeg (like Instagram Edits app)
+
+No API keys required — everything is copy-paste into web UIs.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 
@@ -78,36 +79,6 @@ def _load_script(script_path: str) -> tuple[Script, Path]:
     return script_obj, path.parent
 
 
-def _save_script(script: Script, out_dir: Path) -> Path:
-    """Save a script to JSON."""
-    script_path = out_dir / "script.json"
-    data = {
-        "title": script.title,
-        "hook": script.hook,
-        "channel": script.channel.value,
-        "format": script.format.value,
-        "era": script.era,
-        "event": script.event,
-        "description": script.description,
-        "top_label": script.top_label,
-        "hashtags": list(script.hashtags),
-        "scenes": [
-            {
-                "scene_number": s.scene_number,
-                "description": s.description,
-                "dialogue": s.dialogue,
-                "image_prompt": s.image_prompt,
-                "video_prompt": s.video_prompt,
-                "duration_seconds": s.duration_seconds,
-            }
-            for s in script.scenes
-        ],
-    }
-    with open(script_path, "w") as f:
-        json.dump(data, f, indent=2)
-    return script_path
-
-
 @click.group()
 @click.version_option(version=__version__)
 def cli() -> None:
@@ -117,13 +88,13 @@ def cli() -> None:
 
     \b
     Workflow:
-      1. mochi script  → Generate script with image + video prompts
-      2. mochi images   → Get prompts to paste into Higgsfield (Nano Banana 2)
-      3. mochi clips    → Get prompts to paste into Higgsfield (Kling 3.0)
-      4. mochi assemble → Stitch clips + add top label (ffmpeg)
+      1. mochi script       → Get prompt to paste into ChatGPT
+      2. mochi load-script   → Load ChatGPT's JSON response
+      3. mochi images        → Get prompts for Higgsfield (Nano Banana 2)
+      4. mochi clips         → Get prompts for Higgsfield (Kling 3.0)
+      5. mochi assemble      → Stitch clips + add top label (ffmpeg)
 
-    Or run everything:
-      mochi produce "topic" -c japan -f long
+    No API keys required. Everything is copy-paste.
     """
     pass
 
@@ -143,34 +114,61 @@ def cli() -> None:
     help="Video format: short (60s) or long (10min)",
 )
 def script(topic: str, channel: str, fmt: str) -> None:
-    """Generate a video script with image + video prompts.
+    """Generate a ChatGPT prompt for script creation.
+
+    Prints a prompt to paste into ChatGPT. ChatGPT returns JSON
+    that you feed into `mochi load-script`.
 
     Example: mochi script "The Great Fire of Meireki 1657" -c japan -f short
     """
-    from mochi.services.script_writer import generate_script
+    from mochi.services.script_writer import print_chatgpt_instructions
 
     ch = Channel(channel)
     vf = VideoFormat(fmt)
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        console=console,
-    ) as progress:
-        progress.add_task("Writing script via GPT-4o...", total=None)
-        result = asyncio.run(generate_script(topic, ch, vf))
+    print_chatgpt_instructions(topic, ch, vf)
 
-    slug = _slugify(result.title)
+
+@cli.command("load-script")
+@click.argument("json_file", type=click.Path(exists=True))
+@click.option(
+    "--channel", "-c",
+    type=click.Choice(["japan", "china"]),
+    required=True,
+)
+@click.option(
+    "--format", "-f", "fmt",
+    type=click.Choice(["short", "long"]),
+    default="short",
+)
+def load_script(json_file: str, channel: str, fmt: str) -> None:
+    """Load a script from ChatGPT's JSON response.
+
+    Save ChatGPT's JSON output to a file, then load it here.
+
+    Example: mochi load-script ~/Downloads/chatgpt_response.json -c japan -f short
+    """
+    from mochi.services.script_writer import parse_chatgpt_response, save_script_to_disk
+
+    ch = Channel(channel)
+    vf = VideoFormat(fmt)
+
+    with open(json_file) as f:
+        raw = f.read()
+
+    script_obj = parse_chatgpt_response(raw, ch, vf)
+
+    slug = _slugify(script_obj.title)
     out_dir = _output_dir_for(ch, vf, slug)
-    script_path = _save_script(result, out_dir)
+    script_path = save_script_to_disk(script_obj, out_dir)
 
     console.print(Panel(
-        f"[bold green]Script generated![/]\n\n"
-        f"Title: {result.title}\n"
-        f"Hook: {result.hook}\n"
-        f"Top Label: {result.top_label}\n"
-        f"Scenes: {result.scene_count}\n"
-        f"Duration: ~{result.total_duration}s\n"
+        f"[bold green]Script loaded![/]\n\n"
+        f"Title: {script_obj.title}\n"
+        f"Hook: {script_obj.hook}\n"
+        f"Top Label: {script_obj.top_label}\n"
+        f"Scenes: {script_obj.scene_count}\n"
+        f"Duration: ~{script_obj.total_duration}s\n"
         f"Saved: {script_path}",
         title="Mochi Script",
     ))
@@ -180,9 +178,9 @@ def script(topic: str, channel: str, fmt: str) -> None:
     table.add_column("Dialogue", max_width=50)
     table.add_column("Duration", width=8)
 
-    for s in result.scenes:
-        dialogue_preview = s.dialogue[:47] + "..." if len(s.dialogue) > 50 else s.dialogue
-        table.add_row(str(s.scene_number), dialogue_preview, f"{s.duration_seconds}s")
+    for s in script_obj.scenes:
+        preview = s.dialogue[:47] + "..." if len(s.dialogue) > 50 else s.dialogue
+        table.add_row(str(s.scene_number), preview, f"{s.duration_seconds}s")
 
     console.print(table)
     console.print(f"\nNext: [bold]mochi images {script_path}[/]")
@@ -191,9 +189,7 @@ def script(topic: str, channel: str, fmt: str) -> None:
 @cli.command()
 @click.argument("script_path", type=click.Path(exists=True))
 def images(script_path: str) -> None:
-    """Generate image prompts for Higgsfield Nano Banana 2.
-
-    Prints all prompts and settings — paste them into Higgsfield.
+    """Print image prompts for Higgsfield Nano Banana 2.
 
     Example: mochi images output/japan/shorts/great_fire/script.json
     """
@@ -214,9 +210,9 @@ def images(script_path: str) -> None:
 @cli.command()
 @click.argument("script_path", type=click.Path(exists=True))
 def clips(script_path: str) -> None:
-    """Generate video prompts for Higgsfield Kling 3.0.
+    """Print video prompts for Higgsfield Kling 3.0.
 
-    Prints all prompts with settings (enhanced OFF, audio ON, 1080p).
+    Settings: enhanced OFF, audio ON, 1080p, 10-15 sec.
     For long-form: groups into multi-shot sequences of 5.
 
     Example: mochi clips output/japan/shorts/great_fire/script.json
@@ -238,8 +234,7 @@ def clips(script_path: str) -> None:
 def assemble(script_path: str, no_label: bool) -> None:
     """Stitch downloaded clips into final video with ffmpeg.
 
-    Clips must be saved in the clips/ directory as clip_001.mp4, etc.
-    Audio is already embedded (Kling 3.0 generates it).
+    Clips must be saved as clip_001.mp4, clip_002.mp4, etc.
 
     Example: mochi assemble output/japan/shorts/great_fire/script.json
     """
@@ -289,90 +284,40 @@ def assemble(script_path: str, no_label: bool) -> None:
 @click.option("--channel", "-c", type=click.Choice(["japan", "china"]), required=True)
 @click.option("--format", "-f", "fmt", type=click.Choice(["short", "long"]), default="short")
 def produce(topic: str, channel: str, fmt: str) -> None:
-    """Full pipeline: generate script + all prompts for Higgsfield.
-
-    Generates everything you need, then waits for you to create
-    images and clips in Higgsfield before assembling.
+    """Full pipeline: generates all prompts for ChatGPT + Higgsfield.
 
     Example: mochi produce "The Great Fire of Meireki 1657" -c japan -f long
     """
-    from mochi.services.script_writer import generate_script
-    from mochi.services.image_gen import (
-        generate_image_instructions,
-        generate_thumbnail_instructions,
-    )
-    from mochi.services.video_gen import generate_video_instructions
+    from mochi.services.script_writer import print_chatgpt_instructions
 
     ch = Channel(channel)
     vf = VideoFormat(fmt)
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        console=console,
-    ) as progress:
-        progress.add_task("Writing script via GPT-4o...", total=None)
-        script_obj = asyncio.run(generate_script(topic, ch, vf))
+    print_chatgpt_instructions(topic, ch, vf)
 
-    slug = _slugify(script_obj.title)
-    out_dir = _output_dir_for(ch, vf, slug)
-    script_path = _save_script(script_obj, out_dir)
-
+    console.print("\n" + "=" * 60)
     console.print(Panel(
-        f"[bold green]Script generated![/]\n\n"
-        f"Title: {script_obj.title}\n"
-        f"Hook: {script_obj.hook}\n"
-        f"Top Label: {script_obj.top_label}\n"
-        f"Scenes: {script_obj.scene_count}\n"
-        f"Duration: ~{script_obj.total_duration}s",
-        title="Step 1/4: Script",
-    ))
-
-    # Step 2: Image instructions
-    console.print("\n" + "=" * 60 + "\n")
-    img_dir = out_dir / "images"
-    generate_image_instructions(script_obj, img_dir)
-    generate_thumbnail_instructions(script_obj, out_dir)
-
-    # Step 3: Video instructions
-    console.print("\n" + "=" * 60 + "\n")
-    clip_dir = out_dir / "clips"
-    generate_video_instructions(script_obj, img_dir, clip_dir)
-
-    # Step 4: Assembly instructions
-    console.print("\n" + "=" * 60 + "\n")
-    console.print(Panel(
-        f"[bold]After generating images and clips in Higgsfield:[/]\n\n"
-        f"1. Save images to: {img_dir}/scene_XXX.png\n"
-        f"2. Save clips to: {clip_dir}/clip_XXX.mp4\n"
-        f"3. Run: [bold]mochi assemble {script_path}[/]\n\n"
-        f"This will stitch all clips + add the top label overlay.",
-        title="Step 4/4: Assembly",
+        f"[bold]After getting ChatGPT's JSON response:[/]\n\n"
+        f"1. Save the JSON to a file (e.g., response.json)\n"
+        f"2. Run: [bold]mochi load-script response.json -c {channel} -f {fmt}[/bold]\n"
+        f"3. Run: [bold]mochi images <script.json>[/bold]\n"
+        f"4. Generate images in Higgsfield (Nano Banana 2)\n"
+        f"5. Run: [bold]mochi clips <script.json>[/bold]\n"
+        f"6. Generate videos in Higgsfield (Kling 3.0)\n"
+        f"7. Run: [bold]mochi assemble <script.json>[/bold]",
+        title="Full Workflow",
     ))
 
 
 @cli.command()
 def status() -> None:
-    """Show project status — config, assets, and video counts."""
-    config = load_config()
-
+    """Show project status — assets and video counts."""
     table = Table(title="Mochi Project Status")
     table.add_column("Component", style="bold")
     table.add_column("Status")
 
-    # API / tools
-    table.add_row(
-        "Higgsfield API",
-        "[green]Configured[/]" if config.higgsfield.api_key else "[yellow]Manual mode[/]",
-    )
-    table.add_row(
-        "OPENAI_API_KEY",
-        "[green]Set[/]" if __import__("os").environ.get("OPENAI_API_KEY") else "[red]Missing[/]",
-    )
-    table.add_row(
-        "ffmpeg",
-        _check_ffmpeg_status(),
-    )
+    # Tools
+    table.add_row("ffmpeg", _check_ffmpeg_status())
 
     # Character refs
     ref_images = list(CHARACTER_DIR.glob("*.jpg")) + list(CHARACTER_DIR.glob("*.png"))
@@ -395,11 +340,15 @@ def status() -> None:
     console.print(table)
 
     console.print("\n[bold]Workflow:[/]")
-    console.print("  1. mochi script → 2. mochi images → 3. mochi clips → 4. mochi assemble")
+    console.print("  1. mochi script    → get ChatGPT prompt")
+    console.print("  2. mochi load-script → load ChatGPT JSON response")
+    console.print("  3. mochi images    → get Higgsfield image prompts")
+    console.print("  4. mochi clips     → get Higgsfield video prompts")
+    console.print("  5. mochi assemble  → stitch clips with ffmpeg")
     console.print("\n[bold]Tools needed:[/]")
-    console.print("  - Higgsfield account ($15-34/mo) — higgsfield.ai")
-    console.print("  - OpenAI API key — platform.openai.com")
-    console.print("  - ffmpeg — brew install ffmpeg")
+    console.print("  - ChatGPT (free) — chatgpt.com")
+    console.print("  - Higgsfield ($15-34/mo) — higgsfield.ai")
+    console.print("  - ffmpeg (free) — brew install ffmpeg")
 
 
 def _check_ffmpeg_status() -> str:

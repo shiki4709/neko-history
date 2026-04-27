@@ -11,20 +11,20 @@ mochi produce "The Great Fire of Meireki 1657" -c japan -f long
 ```
 
 ```
-Topic → Script (GPT-4o) → Image prompts (Nano Banana 2) → Video prompts (Kling 3.0) → Stitch (ffmpeg)
+Topic → ChatGPT (script) → Nano Banana 2 (images) → Kling 3.0 (video+audio) → ffmpeg (stitch)
 ```
 
-## How It Works
+**No API keys required.** Everything is copy-paste into web UIs.
 
-| Step | Tool | What happens |
-|------|------|-------------|
-| `mochi script` | GPT-4o | Generates scene-by-scene script with image + video prompts |
-| `mochi images` | Higgsfield (Nano Banana 2) | Prints prompts to paste — generates scene images (9:16, 2K) |
-| `mochi clips` | Higgsfield (Kling 3.0) | Prints prompts to paste — generates video with dialogue (audio ON, 1080p) |
-| `mochi assemble` | ffmpeg | Stitches clips + adds top label overlay |
-| `mochi produce` | All of the above | Full pipeline |
+## Commands
 
-Kling 3.0 generates the voice/dialogue directly — no separate TTS needed.
+| Step | Command | What it does |
+|------|---------|-------------|
+| 1 | `mochi script <topic> -c japan` | Generates a prompt to paste into ChatGPT |
+| 2 | `mochi load-script response.json -c japan` | Loads ChatGPT's JSON response |
+| 3 | `mochi images script.json` | Prints prompts for Higgsfield Nano Banana 2 |
+| 4 | `mochi clips script.json` | Prints prompts for Higgsfield Kling 3.0 |
+| 5 | `mochi assemble script.json` | Stitches clips + adds top label (ffmpeg) |
 
 ## Setup
 
@@ -33,14 +33,13 @@ git clone https://github.com/shiki4709/neko-history.git
 cd neko-history
 pip install -e .
 brew install ffmpeg
-export OPENAI_API_KEY="your-key"
 ```
 
 ## Tools Needed
 
 | Tool | Cost | What for |
 |------|------|----------|
-| OpenAI API (GPT-4o) | Pay-per-use (~$0.05/script) | Script generation |
+| ChatGPT | Free | Script generation (paste prompt into website) |
 | Higgsfield | $15-34/mo | Images (Nano Banana 2) + Video (Kling 3.0) |
 | ffmpeg | Free | Stitch clips |
 | DaVinci Resolve | Free | Captions (optional) |

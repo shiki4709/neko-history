@@ -1,115 +1,115 @@
-"""Script generation service using OpenAI GPT.
+"""Script generation — prints prompts for ChatGPT website.
 
-Matches the tutorial workflow: use ChatGPT to generate
-image prompts (for Nano Banana 2) and video prompts (for Kling 3.0).
+The tutorial uses a custom GPT called "Time Travel Vlog" on ChatGPT.
+This service generates the prompt to paste into ChatGPT,
+then parses the response you paste back.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
-from openai import AsyncOpenAI
+from rich.console import Console
+from rich.panel import Panel
 
 from mochi.models.script import Channel, Scene, Script, VideoFormat
 
-CHARACTER_SYSTEM_PROMPT = """\
-You are a script writer for "Mochi History" — a POV history YouTube channel \
-starring Mochi, a realistic orange tabby cat who time-travels to historical events.
+console = Console()
 
-MOCHI'S PERSONALITY:
-- Dramatic survivor — overreacts to EVERYTHING, then plays it cool
-- Fast-talking when panicked, slows down for dramatic reveals
-- Catchphrases: "We are NOT fine.", "This is how I die.", \
-"The humans are doing something stupid again."
-- Occasionally distracted by food smells
-- Judges historical figures like a disappointed cat
-
-RULES:
-- Dialogue is ALWAYS from Mochi's first-person perspective
-- Mochi is physically present in the scene as a cat
-- Include real historical facts woven into the humor
-- End with a genuine historical insight or emotional moment
-
-TECHNICAL REQUIREMENTS:
-- image_prompt: For Nano Banana 2 on Higgsfield. UGC wide-angle selfie style. \
-Must include "realistic orange tabby cat" and describe the historical scene. 9:16.
-- video_prompt: For Kling 3.0 on Higgsfield. Describes the motion/action. \
-Include the dialogue text that Kling will speak aloud (audio ON). \
-Enhanced OFF, 1080p, 10-15 seconds.
-- dialogue: The exact words Mochi says. This gets embedded in the video_prompt \
-so Kling 3.0 generates it as speech audio.
-"""
-
-SHORT_FORMAT_PROMPT = """\
-Write a 60-second SHORT video script with 6-8 scenes.
-Each scene is 8-10 seconds.
-Start with a strong hook in the first 3 seconds.
-End with a punchline or surprising historical fact.
-"""
-
-LONG_FORMAT_PROMPT = """\
-Write a 10-minute LONG-FORM video script with 40-60 scenes.
-Group scenes into multi-shot sequences of 3-5 scenes each (Kling 3.0 supports \
-up to 5 shots per generation in multi-shot custom mode).
-Each scene is 10-15 seconds.
-Structure: Cold open hook → Introduction → Build-up → Climax → Aftermath → Reflection.
-Include at least 10 real historical facts.
-Vary the pacing — intense scenes followed by calm observations.
-Include at least 2 food-related distractions (it's a cat).
-End with a genuine emotional or reflective moment.
-"""
-
-OUTPUT_FORMAT_PROMPT = """\
-Respond with ONLY valid JSON in this exact format (no markdown, no code fences):
-{
-  "title": "Video title for YouTube",
-  "hook": "POV caption for first 3 seconds",
-  "top_label": "I went to [place] to see [event] (for Instagram Edits overlay)",
-  "era": "Historical era name",
-  "event": "Historical event name and year",
-  "description": "YouTube/TikTok description (2-3 sentences with historical context)",
-  "hashtags": ["history", "cat", ...],
-  "scenes": [
-    {
-      "scene_number": 1,
-      "description": "What visually happens in this scene",
-      "dialogue": "What Mochi says out loud in this scene",
-      "image_prompt": "UGC wide-angle selfie of a realistic orange tabby cat \
-[in specific historical setting]. The cat looks [emotion]. Hyper-realistic \
-photography, cinematic lighting, 9:16 vertical.",
-      "video_prompt": "The orange tabby cat [action/motion]. [Camera movement]. \
-The cat says: '[exact dialogue]'. Hyper-realistic, cinematic atmosphere.",
-      "duration_seconds": 10
-    }
-  ]
-}
-"""
+CHATGPT_GPT_URL = "https://chatgpt.com/gpts"
+CHATGPT_GPT_SEARCH = "Time Travel Vlog"
 
 
-def build_prompt(topic: str, channel: Channel, fmt: VideoFormat) -> str:
-    """Build the full prompt for script generation."""
+def generate_chatgpt_prompt(
+    topic: str,
+    channel: Channel,
+    fmt: VideoFormat,
+) -> str:
+    """Generate the prompt to paste into ChatGPT."""
     channel_context = {
-        Channel.JAPAN: "Set in historical Japan. Use Japanese place names and cultural details.",
-        Channel.CHINA: "Set in historical China. Use Chinese place names and cultural details.",
+        Channel.JAPAN: "historical Japan",
+        Channel.CHINA: "historical China",
     }
 
-    format_prompt = SHORT_FORMAT_PROMPT if fmt == VideoFormat.SHORT else LONG_FORMAT_PROMPT
+    if fmt == VideoFormat.SHORT:
+        format_detail = "a 60-second short-form video with 6-8 scenes (8-10 seconds each)"
+    else:
+        format_detail = (
+            "a 10-minute long-form video with 40-60 scenes (10-15 seconds each). "
+            "Group into multi-shot sequences of 5 scenes each"
+        )
 
     return f"""\
-{format_prompt}
+Create {format_detail} about: {topic}
 
-CHANNEL: {channel.value.upper()}
-{channel_context[channel]}
+The character is Mochi, a realistic orange tabby cat who time-travels to \
+{channel_context[channel]}. Mochi has a dramatic survivor personality — \
+overreacts to everything, then plays it cool. Catchphrases include \
+"We are NOT fine" and "This is how I die."
 
-TOPIC: {topic}
+For each scene, generate:
+1. A text-to-image prompt for Nano Banana 2 (UGC wide-angle selfie style, \
+realistic orange tabby cat in the historical setting, 9:16)
+2. A text-to-video prompt for Kling 3.0 (with dialogue that Kling will speak \
+aloud, describe motion and camera movement)
 
-{OUTPUT_FORMAT_PROMPT}
+Output as JSON with this format:
+{{
+  "title": "...",
+  "hook": "POV caption for first 3 seconds",
+  "top_label": "I went to [place] to see [event]",
+  "era": "...",
+  "event": "...",
+  "description": "YouTube description",
+  "hashtags": [...],
+  "scenes": [
+    {{
+      "scene_number": 1,
+      "description": "What happens visually",
+      "dialogue": "What Mochi says",
+      "image_prompt": "Nano Banana 2 prompt...",
+      "video_prompt": "Kling 3.0 prompt with dialogue...",
+      "duration_seconds": 10
+    }}
+  ]
+}}
 """
 
 
-def parse_script_response(raw: str, channel: Channel, fmt: VideoFormat) -> Script:
-    """Parse the JSON response into a Script object."""
+def print_chatgpt_instructions(
+    topic: str,
+    channel: Channel,
+    fmt: VideoFormat,
+) -> str:
+    """Print instructions for using ChatGPT and return the prompt."""
+    prompt = generate_chatgpt_prompt(topic, channel, fmt)
+
+    console.print(Panel(
+        f"[bold]Step 1: Generate Script in ChatGPT[/]\n\n"
+        f"1. Go to [link={CHATGPT_GPT_URL}]{CHATGPT_GPT_URL}[/link]\n"
+        f"2. Search for [bold]'{CHATGPT_GPT_SEARCH}'[/bold] and open it\n"
+        f"   (or use any ChatGPT chat)\n"
+        f"3. Paste the prompt below\n"
+        f"4. Copy the JSON response\n"
+        f"5. Run: [bold]mochi save-script <paste>[/bold]\n"
+        f"   or save the JSON to a file and run:\n"
+        f"   [bold]mochi load-script path/to/response.json -c {channel.value} -f {fmt.value}[/bold]",
+        title="ChatGPT Script Generation",
+    ))
+
+    console.print(Panel(prompt, title="Copy this prompt into ChatGPT"))
+
+    return prompt
+
+
+def parse_chatgpt_response(
+    raw: str,
+    channel: Channel,
+    fmt: VideoFormat,
+) -> Script:
+    """Parse JSON response from ChatGPT into a Script object."""
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.split("\n", 1)[1]
@@ -145,25 +145,35 @@ def parse_script_response(raw: str, channel: Channel, fmt: VideoFormat) -> Scrip
     )
 
 
-async def generate_script(
-    topic: str,
-    channel: Channel,
-    fmt: VideoFormat,
-) -> Script:
-    """Generate a complete video script using OpenAI GPT."""
-    client = AsyncOpenAI()
+def save_script_to_disk(script: Script, output_dir: Path) -> Path:
+    """Save a parsed script to disk as JSON."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    script_path = output_dir / "script.json"
 
-    prompt = build_prompt(topic, channel, fmt)
-
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": CHARACTER_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
+    data = {
+        "title": script.title,
+        "hook": script.hook,
+        "channel": script.channel.value,
+        "format": script.format.value,
+        "era": script.era,
+        "event": script.event,
+        "description": script.description,
+        "top_label": script.top_label,
+        "hashtags": list(script.hashtags),
+        "scenes": [
+            {
+                "scene_number": s.scene_number,
+                "description": s.description,
+                "dialogue": s.dialogue,
+                "image_prompt": s.image_prompt,
+                "video_prompt": s.video_prompt,
+                "duration_seconds": s.duration_seconds,
+            }
+            for s in script.scenes
         ],
-        temperature=0.9,
-    )
+    }
 
-    return parse_script_response(
-        response.choices[0].message.content, channel, fmt
-    )
+    with open(script_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+    return script_path
