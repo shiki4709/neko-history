@@ -1,7 +1,7 @@
 """Mochi CLI — the main entry point.
 
 Workflow (matches the YouTube tutorial):
-1. Script: Claude generates image prompts + video prompts with dialogue
+1. Script: GPT-4o generates image prompts + video prompts with dialogue
 2. Images: Paste prompts into Higgsfield → Nano Banana 2 (9:16, 2K)
 3. Clips:  Upload images to Higgsfield → Kling 3.0 (enhanced OFF, audio ON, 1080p)
 4. Stitch: ffmpeg concatenates clips (audio already embedded by Kling)
@@ -157,7 +157,7 @@ def script(topic: str, channel: str, fmt: str) -> None:
         TextColumn("[bold blue]{task.description}"),
         console=console,
     ) as progress:
-        progress.add_task("Writing script via Claude...", total=None)
+        progress.add_task("Writing script via GPT-4o...", total=None)
         result = asyncio.run(generate_script(topic, ch, vf))
 
     slug = _slugify(result.title)
@@ -311,7 +311,7 @@ def produce(topic: str, channel: str, fmt: str) -> None:
         TextColumn("[bold blue]{task.description}"),
         console=console,
     ) as progress:
-        progress.add_task("Writing script via Claude...", total=None)
+        progress.add_task("Writing script via GPT-4o...", total=None)
         script_obj = asyncio.run(generate_script(topic, ch, vf))
 
     slug = _slugify(script_obj.title)
@@ -366,8 +366,8 @@ def status() -> None:
         "[green]Configured[/]" if config.higgsfield.api_key else "[yellow]Manual mode[/]",
     )
     table.add_row(
-        "ANTHROPIC_API_KEY",
-        "[green]Set[/]" if __import__("os").environ.get("ANTHROPIC_API_KEY") else "[red]Missing[/]",
+        "OPENAI_API_KEY",
+        "[green]Set[/]" if __import__("os").environ.get("OPENAI_API_KEY") else "[red]Missing[/]",
     )
     table.add_row(
         "ffmpeg",
@@ -398,7 +398,7 @@ def status() -> None:
     console.print("  1. mochi script → 2. mochi images → 3. mochi clips → 4. mochi assemble")
     console.print("\n[bold]Tools needed:[/]")
     console.print("  - Higgsfield account ($15-34/mo) — higgsfield.ai")
-    console.print("  - Anthropic API key — console.anthropic.com")
+    console.print("  - OpenAI API key — platform.openai.com")
     console.print("  - ffmpeg — brew install ffmpeg")
 
 

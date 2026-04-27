@@ -1,7 +1,7 @@
-"""Script generation service using Claude or ChatGPT.
+"""Script generation service using OpenAI GPT.
 
-Generates both image prompts (for Nano Banana 2) and video prompts
-(for Kling 3.0 with dialogue/audio).
+Matches the tutorial workflow: use ChatGPT to generate
+image prompts (for Nano Banana 2) and video prompts (for Kling 3.0).
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import anthropic
+from openai import AsyncOpenAI
 
 from mochi.models.script import Channel, Scene, Script, VideoFormat
 
@@ -32,10 +32,11 @@ RULES:
 - End with a genuine historical insight or emotional moment
 
 TECHNICAL REQUIREMENTS:
-- image_prompt: For Nano Banana 2 on Higgsfield. Must include "realistic orange \
-tabby cat" and describe the historical scene. UGC wide-angle selfie style, 9:16.
+- image_prompt: For Nano Banana 2 on Higgsfield. UGC wide-angle selfie style. \
+Must include "realistic orange tabby cat" and describe the historical scene. 9:16.
 - video_prompt: For Kling 3.0 on Higgsfield. Describes the motion/action. \
-Include the dialogue text that Kling will speak aloud (audio ON).
+Include the dialogue text that Kling will speak aloud (audio ON). \
+Enhanced OFF, 1080p, 10-15 seconds.
 - dialogue: The exact words Mochi says. This gets embedded in the video_prompt \
 so Kling 3.0 generates it as speech audio.
 """
@@ -149,17 +150,20 @@ async def generate_script(
     channel: Channel,
     fmt: VideoFormat,
 ) -> Script:
-    """Generate a complete video script using Claude."""
-    client = anthropic.AsyncAnthropic()
+    """Generate a complete video script using OpenAI GPT."""
+    client = AsyncOpenAI()
 
     prompt = build_prompt(topic, channel, fmt)
 
-    response = await client.messages.create(
-        model="claude-sonnet-4-6-20250514",
-        max_tokens=8192,
-        system=CHARACTER_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": CHARACTER_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
         temperature=0.9,
     )
 
-    return parse_script_response(response.content[0].text, channel, fmt)
+    return parse_script_response(
+        response.choices[0].message.content, channel, fmt
+    )
