@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Config with secrets
+config/settings.yaml
+
+# Generated outputs
+output/*/shorts/*/clips/
+output/*/shorts/*/images/
+output/*/shorts/*/*.mp3
+output/*/shorts/*/*.mp4
+output/*/longform/*/clips/
+output/*/longform/*/images/
+output/*/longform/*/*.mp3
+output/*/longform/*/*.mp4
+
+# Keep scripts (JSON) and thumbnails in git
+!output/*/shorts/*/script.json
+!output/*/longform/*/script.json
+!output/*/shorts/*/thumbnail.png
+!output/*/longform/*/thumbnail.png
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/

@@ -1,0 +1,62 @@
+# Mochi CLI — Pipeline Configuration
+# Copy to settings.yaml and fill in your API keys
+#
+# Workflow:
+#   1. Google AI Studio (free) — script writing + scene images
+#   2. Higgsfield ($15-34/mo) — image-to-video clips with character lock
+#   3. ElevenLabs ($5/mo) — Mochi's voice
+#   4. ffmpeg (free) — stitch clips + overlay voice
+#   5. YouTube/TikTok/IG APIs — publish
+
+apis:
+  google_ai_studio:
+    api_key: ""  # Free — scripts (Gemini), images (Imagen 3), video (Veo 3.1)
+
+  elevenlabs:
+    api_key: ""
+    voice_id: ""  # Set after voice selection/cloning
+    model: "eleven_multilingual_v2"
+
+  higgsfield:
+    api_key: ""  # Optional — for future API automation
+
+  youtube:
+    client_id: ""
+    client_secret: ""
+
+  tiktok:
+    client_key: ""
+    client_secret: ""
+
+  instagram:
+    access_token: ""
+    business_account_id: ""
+
+channels:
+  japan:
+    name: "Mochi in Old Japan"
+    youtube_channel_id: ""
+    tiktok_username: ""
+    instagram_username: ""
+
+  china:
+    name: "Mochi in Ancient China"
+    youtube_channel_id: ""
+    tiktok_username: ""
+    instagram_username: ""
+
+video:
+  primary_generator: "higgsfield"
+  fallback_generator: "veo"
+  resolution: "1080p"
+  short_duration: 60
+  long_duration: 600
+
+voice:
+  speed: 1.0
+  stability: 0.5
+  similarity_boost: 0.75
+
+publishing:
+  auto_publish: false
+  platforms: ["youtube", "tiktok", "instagram"]
