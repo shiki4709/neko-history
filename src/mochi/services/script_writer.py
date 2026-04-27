@@ -22,32 +22,58 @@ CHATGPT_GPT_URL = "https://chatgpt.com/gpts"
 CHATGPT_GPT_SEARCH = "Time Travel Vlog"
 
 
-def generate_chatgpt_prompt(
+def generate_brainstorm_prompt(
     topic: str,
     channel: Channel,
     fmt: VideoFormat,
 ) -> str:
-    """Generate the prompt to paste into ChatGPT."""
+    """Generate the brainstorming prompt — Step 1 of the ChatGPT flow."""
     channel_context = {
         Channel.JAPAN: "historical Japan",
         Channel.CHINA: "historical China",
     }
 
     if fmt == VideoFormat.SHORT:
-        format_detail = "a 60-second short-form video with 6-8 scenes (8-10 seconds each)"
+        format_detail = "a 60-second short-form video (6-8 scenes)"
     else:
-        format_detail = (
-            "a 10-minute long-form video with 40-60 scenes (10-15 seconds each). "
-            "Group into multi-shot sequences of 5 scenes each"
-        )
+        format_detail = "a 10-minute long-form video (40-60 scenes)"
 
     return f"""\
-Create {format_detail} about: {topic}
+I want to create {format_detail} about: {topic}
 
 The character is Mochi, a realistic orange tabby cat who time-travels to \
 {channel_context[channel]}. Mochi has a dramatic survivor personality — \
 overreacts to everything, then plays it cool. Catchphrases include \
-"We are NOT fine" and "This is how I die."
+"We are NOT fine" and "This is how I die." He occasionally gets distracted \
+by food and judges historical figures like a disappointed cat.
+
+Before we generate prompts, let's brainstorm:
+1. What are the most visually dramatic moments of this event?
+2. What would Mochi's emotional journey be through this event?
+3. What specific historical details would make this feel authentic?
+4. What's the hook — the first 3 seconds that stops the scroll?
+5. What's the punchline or emotional payoff at the end?
+6. What locations/scenes would look the most cinematic?
+
+Let's discuss the concept first before generating any prompts.\
+"""
+
+
+def generate_prompts_prompt(
+    channel: Channel,
+    fmt: VideoFormat,
+) -> str:
+    """Generate the prompt-generation prompt — Step 2, after brainstorming."""
+    if fmt == VideoFormat.SHORT:
+        format_detail = "6-8 scenes (8-10 seconds each)"
+    else:
+        format_detail = (
+            "40-60 scenes (10-15 seconds each), "
+            "grouped into multi-shot sequences of 5"
+        )
+
+    return f"""\
+Great, now generate the full production document with {format_detail}.
 
 For each scene, generate:
 1. A text-to-image prompt for Nano Banana 2 (UGC wide-angle selfie style, \
@@ -83,25 +109,29 @@ def print_chatgpt_instructions(
     channel: Channel,
     fmt: VideoFormat,
 ) -> str:
-    """Print instructions for using ChatGPT and return the prompt."""
-    prompt = generate_chatgpt_prompt(topic, channel, fmt)
+    """Print the two-step ChatGPT flow: brainstorm first, then generate prompts."""
+    brainstorm = generate_brainstorm_prompt(topic, channel, fmt)
+    prompts = generate_prompts_prompt(channel, fmt)
 
     console.print(Panel(
-        f"[bold]Step 1: Generate Script in ChatGPT[/]\n\n"
+        f"[bold]ChatGPT Flow (2 steps)[/]\n\n"
         f"1. Go to [link={CHATGPT_GPT_URL}]{CHATGPT_GPT_URL}[/link]\n"
         f"2. Search for [bold]'{CHATGPT_GPT_SEARCH}'[/bold] and open it\n"
-        f"   (or use any ChatGPT chat)\n"
-        f"3. Paste the prompt below\n"
-        f"4. Copy the JSON response\n"
-        f"5. Run: [bold]mochi save-script <paste>[/bold]\n"
-        f"   or save the JSON to a file and run:\n"
-        f"   [bold]mochi load-script path/to/response.json -c {channel.value} -f {fmt.value}[/bold]",
+        f"   (or use any ChatGPT chat)\n\n"
+        f"[bold]Step 1:[/] Paste the brainstorm prompt below.\n"
+        f"  Discuss the concept — refine scenes, locations, Mochi's reactions.\n"
+        f"  Go back and forth until you're happy with the plan.\n\n"
+        f"[bold]Step 2:[/] When ready, paste the second prompt to generate\n"
+        f"  the full production JSON with all image + video prompts.\n\n"
+        f"[bold]Step 3:[/] Save the JSON and run:\n"
+        f"  [bold]mochi load-script response.json -c {channel.value} -f {fmt.value}[/bold]",
         title="ChatGPT Script Generation",
     ))
 
-    console.print(Panel(prompt, title="Copy this prompt into ChatGPT"))
+    console.print(Panel(brainstorm, title="Step 1: Paste this FIRST — Brainstorm"))
+    console.print(Panel(prompts, title="Step 2: Paste this AFTER brainstorming — Generate Prompts"))
 
-    return prompt
+    return brainstorm
 
 
 def parse_chatgpt_response(
