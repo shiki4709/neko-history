@@ -1,13 +1,16 @@
-"""Script generation service using Google Gemini."""
+"""Script generation service using Claude or ChatGPT.
+
+Generates both image prompts (for Nano Banana 2) and video prompts
+(for Kling 3.0 with dialogue/audio).
+"""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from google import genai
+import anthropic
 
-from mochi.config import Config
 from mochi.models.script import Channel, Scene, Script, VideoFormat
 
 CHARACTER_SYSTEM_PROMPT = """\
@@ -23,23 +26,32 @@ MOCHI'S PERSONALITY:
 - Judges historical figures like a disappointed cat
 
 RULES:
-- Narration is ALWAYS from Mochi's first-person perspective
+- Dialogue is ALWAYS from Mochi's first-person perspective
 - Mochi is physically present in the scene as a cat
 - Include real historical facts woven into the humor
 - End with a genuine historical insight or emotional moment
-- Each scene description must be vivid enough to generate an AI video from it
+
+TECHNICAL REQUIREMENTS:
+- image_prompt: For Nano Banana 2 on Higgsfield. Must include "realistic orange \
+tabby cat" and describe the historical scene. UGC wide-angle selfie style, 9:16.
+- video_prompt: For Kling 3.0 on Higgsfield. Describes the motion/action. \
+Include the dialogue text that Kling will speak aloud (audio ON).
+- dialogue: The exact words Mochi says. This gets embedded in the video_prompt \
+so Kling 3.0 generates it as speech audio.
 """
 
 SHORT_FORMAT_PROMPT = """\
 Write a 60-second SHORT video script with 6-8 scenes.
-Each scene is 5-10 seconds.
+Each scene is 8-10 seconds.
 Start with a strong hook in the first 3 seconds.
 End with a punchline or surprising historical fact.
 """
 
 LONG_FORMAT_PROMPT = """\
 Write a 10-minute LONG-FORM video script with 40-60 scenes.
-Each scene is 8-15 seconds.
+Group scenes into multi-shot sequences of 3-5 scenes each (Kling 3.0 supports \
+up to 5 shots per generation in multi-shot custom mode).
+Each scene is 10-15 seconds.
 Structure: Cold open hook → Introduction → Build-up → Climax → Aftermath → Reflection.
 Include at least 10 real historical facts.
 Vary the pacing — intense scenes followed by calm observations.
@@ -52,6 +64,7 @@ Respond with ONLY valid JSON in this exact format (no markdown, no code fences):
 {
   "title": "Video title for YouTube",
   "hook": "POV caption for first 3 seconds",
+  "top_label": "I went to [place] to see [event] (for Instagram Edits overlay)",
   "era": "Historical era name",
   "event": "Historical event name and year",
   "description": "YouTube/TikTok description (2-3 sentences with historical context)",
@@ -60,11 +73,13 @@ Respond with ONLY valid JSON in this exact format (no markdown, no code fences):
     {
       "scene_number": 1,
       "description": "What visually happens in this scene",
-      "narration": "Mochi's voiceover text for this scene",
-      "video_prompt": "Detailed prompt for AI video generation: \
-A realistic orange tabby cat [action] in [detailed historical setting]. \
-Handheld camera, hyper-realistic, cinematic atmosphere. 9:16 vertical.",
-      "duration_seconds": 8
+      "dialogue": "What Mochi says out loud in this scene",
+      "image_prompt": "UGC wide-angle selfie of a realistic orange tabby cat \
+[in specific historical setting]. The cat looks [emotion]. Hyper-realistic \
+photography, cinematic lighting, 9:16 vertical.",
+      "video_prompt": "The orange tabby cat [action/motion]. [Camera movement]. \
+The cat says: '[exact dialogue]'. Hyper-realistic, cinematic atmosphere.",
+      "duration_seconds": 10
     }
   ]
 }
@@ -93,8 +108,7 @@ TOPIC: {topic}
 
 
 def parse_script_response(raw: str, channel: Channel, fmt: VideoFormat) -> Script:
-    """Parse the JSON response from Gemini into a Script object."""
-    # Strip markdown code fences if present
+    """Parse the JSON response into a Script object."""
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.split("\n", 1)[1]
@@ -108,9 +122,10 @@ def parse_script_response(raw: str, channel: Channel, fmt: VideoFormat) -> Scrip
         Scene(
             scene_number=s["scene_number"],
             description=s["description"],
-            narration=s["narration"],
+            dialogue=s["dialogue"],
+            image_prompt=s["image_prompt"],
             video_prompt=s["video_prompt"],
-            duration_seconds=s.get("duration_seconds", 8),
+            duration_seconds=s.get("duration_seconds", 10),
         )
         for s in data["scenes"]
     )
@@ -125,6 +140,7 @@ def parse_script_response(raw: str, channel: Channel, fmt: VideoFormat) -> Scrip
         scenes=scenes,
         hashtags=tuple(data.get("hashtags", [])),
         description=data.get("description", ""),
+        top_label=data.get("top_label", ""),
     )
 
 
@@ -132,20 +148,18 @@ async def generate_script(
     topic: str,
     channel: Channel,
     fmt: VideoFormat,
-    config: Config,
 ) -> Script:
-    """Generate a complete video script using Google Gemini."""
-    client = genai.Client(api_key=config.google.api_key)
+    """Generate a complete video script using Claude."""
+    client = anthropic.AsyncAnthropic()
 
     prompt = build_prompt(topic, channel, fmt)
 
-    response = await client.aio.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config=genai.types.GenerateContentConfig(
-            system_instruction=CHARACTER_SYSTEM_PROMPT,
-            temperature=0.9,
-        ),
+    response = await client.messages.create(
+        model="claude-sonnet-4-6-20250514",
+        max_tokens=8192,
+        system=CHARACTER_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.9,
     )
 
-    return parse_script_response(response.text, channel, fmt)
+    return parse_script_response(response.content[0].text, channel, fmt)

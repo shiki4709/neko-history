@@ -1,4 +1,8 @@
-"""Video assembly service — stitches clips + voice using ffmpeg."""
+"""Video assembly — stitch Kling 3.0 clips using ffmpeg.
+
+Clips already contain audio (Kling generates dialogue with audio ON),
+so assembly is just concatenation + optional caption overlay.
+"""
 
 from __future__ import annotations
 
@@ -27,7 +31,10 @@ def stitch_clips(
     clip_paths: list[Path],
     output_path: Path,
 ) -> Path:
-    """Concatenate video clips into a single video using ffmpeg."""
+    """Concatenate video clips into a single video.
+
+    Clips already have audio from Kling 3.0, so we just concat.
+    """
     _check_ffmpeg()
 
     with tempfile.NamedTemporaryFile(
@@ -57,12 +64,15 @@ def stitch_clips(
     return output_path
 
 
-def overlay_audio(
+def add_top_label(
     video_path: Path,
-    audio_path: Path,
+    label_text: str,
     output_path: Path,
 ) -> Path:
-    """Overlay narration audio onto the stitched video."""
+    """Add the top label overlay (e.g., 'I went to Edo to see the Great Fire').
+
+    Mimics the Instagram Edits app style: text with background box at top center.
+    """
     _check_ffmpeg()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,12 +80,13 @@ def overlay_audio(
         [
             "ffmpeg", "-y",
             "-i", str(video_path),
-            "-i", str(audio_path),
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-shortest",
+            "-vf",
+            f"drawtext=text='{label_text}':"
+            "fontfile=/System/Library/Fonts/Helvetica.ttc:"
+            "fontsize=28:fontcolor=white:"
+            "box=1:boxcolor=black@0.7:boxborderw=10:"
+            "x=(w-text_w)/2:y=60",
+            "-c:a", "copy",
             str(output_path),
         ],
         capture_output=True,
@@ -89,7 +100,7 @@ def burn_captions(
     srt_path: Path,
     output_path: Path,
 ) -> Path:
-    """Burn subtitle captions into the video for Shorts/Reels."""
+    """Burn subtitle captions into the video."""
     _check_ffmpeg()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,34 +123,27 @@ def burn_captions(
 def assemble_video(
     script: Script,
     clip_paths: list[Path],
-    voice_path: Path,
     output_path: Path,
-    burn_subs: bool = False,
-    srt_path: Path | None = None,
+    add_label: bool = True,
 ) -> Path:
-    """Full assembly pipeline: stitch clips → overlay voice → optional captions.
+    """Full assembly: stitch clips → optional top label.
 
-    Returns path to the final video.
+    No separate audio overlay needed — Kling 3.0 generates
+    dialogue audio directly in each clip.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Stitch clips
-    stitched = output_path.parent / "stitched_raw.mp4"
+    # Step 1: Stitch all clips
+    if add_label and script.top_label:
+        stitched = output_path.parent / "stitched_raw.mp4"
+    else:
+        stitched = output_path
+
     stitch_clips(clip_paths, stitched)
 
-    # Step 2: Overlay narration
-    with_audio = output_path.parent / "with_audio.mp4"
-    overlay_audio(stitched, voice_path, with_audio)
-
-    # Step 3: Burn captions (optional, mainly for Shorts)
-    if burn_subs and srt_path is not None and srt_path.exists():
-        burn_captions(with_audio, srt_path, output_path)
-    else:
-        with_audio.rename(output_path)
-
-    # Cleanup intermediate files
-    stitched.unlink(missing_ok=True)
-    if (output_path.parent / "with_audio.mp4").exists():
-        (output_path.parent / "with_audio.mp4").unlink(missing_ok=True)
+    # Step 2: Add top label if set
+    if add_label and script.top_label:
+        add_top_label(stitched, script.top_label, output_path)
+        stitched.unlink(missing_ok=True)
 
     return output_path

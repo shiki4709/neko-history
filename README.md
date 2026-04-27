@@ -2,6 +2,8 @@
 
 AI-powered POV history video production agent. A cat named Mochi time-travels through ancient Japan and China.
 
+Based on [this workflow](https://www.youtube.com/watch?v=F2dyaOk-deQ).
+
 ## Workflow
 
 ```
@@ -9,72 +11,55 @@ mochi produce "The Great Fire of Meireki 1657" -c japan -f long
 ```
 
 ```
-Topic → Script (Gemini) → Images (Imagen 3) → Voice (ElevenLabs) → Clips (Veo/Higgsfield) → Final Video (ffmpeg)
+Topic → Script (Claude) → Image prompts (Nano Banana 2) → Video prompts (Kling 3.0) → Stitch (ffmpeg)
 ```
 
-## Commands
+## How It Works
 
-| Command | What it does |
-|---------|-------------|
-| `mochi script <topic> -c japan` | Generate a script with scene breakdowns |
-| `mochi images <script.json>` | Generate scene images from script |
-| `mochi voice <script.json>` | Generate Mochi's voiceover |
-| `mochi clips <script.json> -e veo` | Generate video clips from images |
-| `mochi assemble <script.json>` | Stitch clips + voice into final video |
-| `mochi produce <topic> -c japan -f long` | Full pipeline, one command |
-| `mochi status` | Show project status and config |
+| Step | Tool | What happens |
+|------|------|-------------|
+| `mochi script` | Claude | Generates scene-by-scene script with image + video prompts |
+| `mochi images` | Higgsfield (Nano Banana 2) | Prints prompts to paste — generates scene images (9:16, 2K) |
+| `mochi clips` | Higgsfield (Kling 3.0) | Prints prompts to paste — generates video with dialogue (audio ON, 1080p) |
+| `mochi assemble` | ffmpeg | Stitches clips + adds top label overlay |
+| `mochi produce` | All of the above | Full pipeline |
+
+Kling 3.0 generates the voice/dialogue directly — no separate TTS needed.
 
 ## Setup
 
 ```bash
-# Clone
 git clone https://github.com/shiki4709/neko-history.git
 cd neko-history
-
-# Install
 pip install -e .
-
-# Configure
-cp config/settings.example.yaml config/settings.yaml
-# Edit config/settings.yaml with your API keys
-
-# Install ffmpeg (required for assembly)
 brew install ffmpeg
-
-# Run
-mochi status
-mochi script "Samurai cat in Edo period" -c japan -f short
+export ANTHROPIC_API_KEY="your-key"
 ```
 
-## API Keys Needed
+## Tools Needed
 
-| Service | Cost | What for |
-|---------|------|----------|
-| Google AI Studio | Free | Scripts (Gemini) + images (Imagen 3) + video (Veo 3.1) |
-| ElevenLabs | $5/mo | Mochi's voice |
-| Higgsfield | $15-34/mo | Higher quality video clips (optional, Veo is free) |
+| Tool | Cost | What for |
+|------|------|----------|
+| Anthropic API (Claude) | Pay-per-use (~$0.05/script) | Script generation |
+| Higgsfield | $15-34/mo | Images (Nano Banana 2) + Video (Kling 3.0) |
+| ffmpeg | Free | Stitch clips |
+| DaVinci Resolve | Free | Captions (optional) |
+| Instagram Edits app | Free | Final polish (optional) |
 
-## Project Structure
+## Higgsfield Settings
 
-```
-neko-history/
-├── src/mochi/
-│   ├── cli.py              # CLI entry point
-│   ├── config.py           # Config loader
-│   ├── models/script.py    # Data models
-│   └── services/
-│       ├── script_writer.py  # Gemini script generation
-│       ├── image_gen.py      # Imagen 3 scene images
-│       ├── voice.py          # ElevenLabs TTS
-│       ├── video_gen.py      # Veo/Higgsfield clips
-│       ├── assembler.py      # ffmpeg stitching
-│       └── publisher.py      # YouTube/TikTok/IG upload
-├── assets/character/         # Mochi reference images
-├── config/                   # API keys (gitignored)
-├── data/                     # Topic database, sample scripts
-└── output/{japan,china}/     # Generated videos
-```
+| Setting | Value |
+|---------|-------|
+| Image model | Nano Banana 2 |
+| Image aspect ratio | 9:16 |
+| Image resolution | 2K |
+| Video model | Kling 3.0 |
+| Enhanced | **OFF** |
+| Audio | **ON** |
+| Video resolution | 1080p |
+| Video duration | 10-15 seconds |
+| Multi-shot | Custom (up to 5 shots per generation) |
 
 ## The Character
 
-**Mochi** — a realistic orange tabby cat. Dramatic survivor personality. Overreacts to everything. Judges historical figures. Gets distracted by food. Time-travels through Asian history and narrates what he sees.
+**Mochi** — a realistic orange tabby cat. Dramatic survivor personality. Overreacts to everything, then plays it cool. Time-travels through ancient Japan and China.

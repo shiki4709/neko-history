@@ -18,26 +18,12 @@ DATA_DIR = PROJECT_ROOT / "data"
 
 
 @dataclass(frozen=True)
-class GoogleConfig:
-    api_key: str = ""
-
-
-@dataclass(frozen=True)
-class ElevenLabsConfig:
-    api_key: str = ""
-    voice_id: str = ""
-    model: str = "eleven_multilingual_v2"
-
-
-@dataclass(frozen=True)
 class HiggsFieldConfig:
     api_key: str = ""
 
 
 @dataclass(frozen=True)
 class Config:
-    google: GoogleConfig = field(default_factory=GoogleConfig)
-    elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
     higgsfield: HiggsFieldConfig = field(default_factory=HiggsFieldConfig)
 
 
@@ -51,20 +37,6 @@ def load_config() -> Config:
     apis = raw.get("apis", {})
 
     return Config(
-        google=GoogleConfig(
-            api_key=os.environ.get(
-                "GOOGLE_AI_API_KEY",
-                apis.get("google_ai_studio", {}).get("api_key", ""),
-            ),
-        ),
-        elevenlabs=ElevenLabsConfig(
-            api_key=os.environ.get(
-                "ELEVENLABS_API_KEY",
-                apis.get("elevenlabs", {}).get("api_key", ""),
-            ),
-            voice_id=apis.get("elevenlabs", {}).get("voice_id", ""),
-            model=apis.get("elevenlabs", {}).get("model", "eleven_multilingual_v2"),
-        ),
         higgsfield=HiggsFieldConfig(
             api_key=os.environ.get(
                 "HIGGSFIELD_API_KEY",
