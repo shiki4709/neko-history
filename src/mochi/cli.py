@@ -149,6 +149,7 @@ def load_script(json_file: str, channel: str, fmt: str) -> None:
     Example: mochi load-script ~/Downloads/chatgpt_response.json -c japan -f short
     """
     from mochi.services.script_writer import parse_chatgpt_response, save_script_to_disk
+    from mochi.services.tracker import add_video
 
     ch = Channel(channel)
     vf = VideoFormat(fmt)
@@ -161,6 +162,11 @@ def load_script(json_file: str, channel: str, fmt: str) -> None:
     slug = _slugify(script_obj.title)
     out_dir = _output_dir_for(ch, vf, slug)
     script_path = save_script_to_disk(script_obj, out_dir)
+
+    # Auto-track
+    fmt_dir = "shorts" if vf == VideoFormat.SHORT else "longform"
+    video_id = f"{ch.value}/{fmt_dir}/{slug}"
+    add_video(video_id, script_obj.title, ch.value, vf.value, "script")
 
     console.print(Panel(
         f"[bold green]Script loaded![/]\n\n"
@@ -310,8 +316,70 @@ def produce(topic: str, channel: str, fmt: str) -> None:
 
 
 @cli.command()
+@click.option("--channel", "-c", type=click.Choice(["japan", "china"]), default=None)
+@click.option("--stage", "-s", type=click.Choice(["script", "images", "clips", "assembled", "captioned", "published"]), default=None)
+def tracker(channel: str | None, stage: str | None) -> None:
+    """Show video production tracker.
+
+    Example: mochi tracker
+    Example: mochi tracker -c japan
+    Example: mochi tracker -s clips
+    """
+    from mochi.services.tracker import print_tracker_table
+
+    print_tracker_table(channel, stage)
+
+
+@cli.command("track-update")
+@click.argument("video_id")
+@click.argument("stage", type=click.Choice(["script", "images", "clips", "assembled", "captioned", "published"]))
+@click.option("--notes", "-n", default="", help="Optional notes")
+def track_update(video_id: str, stage: str, notes: str) -> None:
+    """Update a video's stage in the tracker.
+
+    Example: mochi track-update japan/shorts/great_fire images
+    """
+    from mochi.services.tracker import update_stage
+
+    entry = update_stage(video_id, stage, notes)
+    if entry:
+        console.print(f"[green]Updated:[/] {entry.title} → {stage} {entry.progress_bar}")
+    else:
+        console.print(f"[red]Video not found: {video_id}[/]")
+
+
+@cli.command("track-publish")
+@click.argument("video_id")
+@click.argument("platform", type=click.Choice(["youtube", "tiktok", "instagram"]))
+@click.argument("url")
+def track_publish(video_id: str, platform: str, url: str) -> None:
+    """Record a published URL for a video.
+
+    Example: mochi track-publish japan/shorts/great_fire youtube https://youtu.be/xxx
+    """
+    from mochi.services.tracker import add_published_url
+
+    add_published_url(video_id, platform, url)
+    console.print(f"[green]Recorded:[/] {platform} → {url}")
+
+
+@cli.command("track-detail")
+@click.argument("video_id")
+def track_detail(video_id: str) -> None:
+    """Show detailed info for a tracked video.
+
+    Example: mochi track-detail japan/shorts/great_fire
+    """
+    from mochi.services.tracker import print_video_detail
+
+    print_video_detail(video_id)
+
+
+@cli.command()
 def status() -> None:
-    """Show project status — assets and video counts."""
+    """Show project status — assets, tools, and tracker summary."""
+    from mochi.services.tracker import list_videos
+
     table = Table(title="Mochi Project Status")
     table.add_column("Component", style="bold")
     table.add_column("Status")
@@ -323,7 +391,18 @@ def status() -> None:
     ref_images = list(CHARACTER_DIR.glob("*.jpg")) + list(CHARACTER_DIR.glob("*.png"))
     table.add_row("Character refs", f"[green]{len(ref_images)} images[/]")
 
-    # Video counts
+    # Tracker summary
+    all_videos = list_videos()
+    if all_videos:
+        published = sum(1 for v in all_videos if v.stage == "published")
+        in_progress = len(all_videos) - published
+        table.add_row("Videos tracked", f"{len(all_videos)} total")
+        table.add_row("Published", f"[green]{published}[/]")
+        table.add_row("In progress", f"[yellow]{in_progress}[/]")
+    else:
+        table.add_row("Videos tracked", "0")
+
+    # Video file counts
     for ch in ["japan", "china"]:
         for fmt in ["shorts", "longform"]:
             video_dir = OUTPUT_DIR / ch / fmt
@@ -340,11 +419,12 @@ def status() -> None:
     console.print(table)
 
     console.print("\n[bold]Workflow:[/]")
-    console.print("  1. mochi script    → get ChatGPT prompt")
+    console.print("  1. mochi script     → get ChatGPT prompt")
     console.print("  2. mochi load-script → load ChatGPT JSON response")
-    console.print("  3. mochi images    → get Higgsfield image prompts")
-    console.print("  4. mochi clips     → get Higgsfield video prompts")
-    console.print("  5. mochi assemble  → stitch clips with ffmpeg")
+    console.print("  3. mochi images     → get Higgsfield image prompts")
+    console.print("  4. mochi clips      → get Higgsfield video prompts")
+    console.print("  5. mochi assemble   → stitch clips with ffmpeg")
+    console.print("  6. mochi tracker    → view production progress")
     console.print("\n[bold]Tools needed:[/]")
     console.print("  - ChatGPT (free) — chatgpt.com")
     console.print("  - Higgsfield ($15-34/mo) — higgsfield.ai")
